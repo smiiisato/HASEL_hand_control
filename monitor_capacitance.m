@@ -190,9 +190,7 @@ function plotData(outputSignal, saveData, csvFileName)
     accumulatedCharge = cumtrapz(timeVector, currentData);
 
     % Capacitance calculation
-    capacitance = zeros(size(timeVector));
-    valid_index = voltageData > 100; % Find valid indices
-    capacitance(valid_index) = accumulatedCharge(valid_index) ./ voltageData(valid_index);
+    capacitance = calculateCapacitance(voltageData, currentData, timeVector);
 
     % Plot capacitance
     figure;
@@ -242,12 +240,13 @@ end
 function capacitance = calculateCapacitance(voltageData, currentData, timeVector)
     % % Calculate accumulated charge
     % accumulatedCharge = cumtrapz(timeVector, currentData);
-
+    % 
     % % Capacitance calculation
     % capacitance = zeros(size(timeVector));
-    % valid_index = voltageData > 100; % Find valid indices
+    % valid_index = voltageData > 200; % Find valid indices
     % capacitance(valid_index) = accumulatedCharge(valid_index) ./ voltageData(valid_index);
 
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Time step
     dt = diff(timeVector);
 
@@ -257,8 +256,15 @@ function capacitance = calculateCapacitance(voltageData, currentData, timeVector
     % Charge difference (I * Δt)
     dQ = currentData(1:end-1) .* dt;
 
+    % Charge
+    Q = cumtrapz(timeVector, currentData);
+
     % Capacitance calculation (ΔQ / ΔV)
     capacitance = zeros(size(voltageData));
-    valid_idx = abs(dV) > 1e-3; % Exclude cases where voltage change is too small (threshold adjustable)
-    % capacitance([false; valid_idx]) = dQ(valid_idx) ./ dV(valid_idx);
+
+    voltage_ramp_idx = abs(dV) > 1e-3; % Exclude cases where voltage change is too small (threshold adjustable)
+    capacitance(voltage_ramp_idx) = dQ(voltage_ramp_idx) ./ dV(voltage_ramp_idx);
+
+    voltage_step_idx = (abs(dV) <= 1e-3) & (voltageData(1:end-1) > 1000);
+    capacitance(voltage_step_idx) = Q(voltage_step_idx) ./ voltageData(voltage_step_idx);
 end
