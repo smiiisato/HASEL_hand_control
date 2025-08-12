@@ -1,4 +1,4 @@
-clc, clear, close all
+clc, clear, close all hidden;
 
 % User configuration
 deviceID = 'Dev1';        % Change if needed (use daq.getDevices)
@@ -6,14 +6,14 @@ aoChannel = 'ao0';
 sampleRate = 1000;
 rampTime = 1; % Ramp duration in seconds
 initialTime = 1;
-highHoldTime = 2;
-lowHoldTime = 2;
-maxVoltage = 5.5;
+highHoldTime = 1;
+lowHoldTime = 1;
+maxVoltage = 4.0;
 numActuations = 1;
 
 % Use configuration for capacitance monitoring
-aiVoltageChannel = 'ai0';
-aiCurrentChannel = 'ai1';
+aiVoltageChannel = 'ai4';
+aiCurrentChannel = 'ai0';
 
 % === Generate output signal ===
 initialSamples = initialTime * sampleRate;
@@ -155,7 +155,7 @@ function startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChanne
     write(dq, [0]);
 
     csvFileName = 'DAQ_data.csv';
-    plotData(saveData == false, csvFileName);
+    plotData(true, csvFileName);
 end
 
 % Function to store data
@@ -184,7 +184,7 @@ function plotData(saveData, csvFileName)
     
     % Extract voltage and current data
     voltageData = inputData(:, 2) * 1e3; % kV -> V
-    currentData = voltageToCurrent(currentData); % V -> A
+    currentData = voltageToCurrent(inputData(:, 3)); % V -> A
 
     % Time vector
     timeVector = inputData(:, 1);
@@ -197,12 +197,13 @@ function plotData(saveData, csvFileName)
 
     % Plot capacitance
     figure;
-    plot(timeVector, capacitance, 'g', 'LineWidth', 1.5);
-    % plot voltage
-    hold on;
-    plot(timeVector, voltageData, 'b', 'LineWidth', 1.5);
+    % plot(timeVector, capacitance, 'g', 'LineWidth', 1.5);
+    % % plot voltage
+    % hold on;
+    % plot(timeVector, voltageData, 'b', 'LineWidth', 1.5);
     % plot current
-    plot(timeVector, currentData, 'r', 'LineWidth', 1.5);
+    % plot(timeVector, currentData, 'r', 'LineWidth', 1.5);
+    plot(timeVector, accumulatedCharge, 'r', 'LineWidth', 1.5);
     hold off;
 
     xlabel('Time (s)');
@@ -227,8 +228,8 @@ function saveCSV(voltageData, currentData, timeVector, capacitance, csvFileName)
     end
    
     %% Save data to CSV
-    outputData = table(Time(1:n_rows), CmdVoltage(1:n_rows), OffTrigger(1:n_rows), Current(1:n_rows), ...
-        'VariableNames', {'Time(s)', 'CmdVoltage(kV)', 'Engage_flag', 'Current(micro A)'});
+    outputData = table(timeVector, voltageData, currentData, capacitance, ...
+        'VariableNames', {'Time(s)', 'MeasuredVoltage(V)', 'Current(A)', 'Capacitance(F)'});
 
     writetable(outputData, csvFileName);
     disp(['Data saved to ' csvFileName]);
