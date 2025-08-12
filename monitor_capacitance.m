@@ -151,7 +151,7 @@ function startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChanne
     write(dq, [0]);
 
     csvFileName = 'DAQ_data.csv';
-    plotData(true, csvFileName);
+    plotData(outputSignal, true, csvFileName);
 end
 
 % Function to store data
@@ -171,14 +171,12 @@ function storeData(src, event)
     fprintf('Stored %d new data points. Total: %d\n', size(newData, 1), size(inputData, 1));
 end
 
-function plotData(saveData, csvFileName)
+function plotData(outputSignal, saveData, csvFileName)
     global inputData;
     if isempty(inputData)
         uialert(fig, 'No data to plot yet.', 'Error');
         return;
     end
-
-    global outputSignal;
     
     % Extract voltage and current data
     % voltageData = inputData(:, 2) * 1e3; % kV -> V
@@ -193,18 +191,18 @@ function plotData(saveData, csvFileName)
 
     % Capacitance calculation
     capacitance = zeros(size(timeVector));
-    valid_index = voltageData > 0; % Find valid indices
+    valid_index = voltageData > 100; % Find valid indices
     capacitance(valid_index) = accumulatedCharge(valid_index) ./ voltageData(valid_index);
 
     % Plot capacitance
     figure;
-    % plot(timeVector, capacitance, 'g', 'LineWidth', 1.5);
+    plot(timeVector, capacitance, 'g', 'LineWidth', 1.5);
     % % plot voltage
     % hold on;
     % plot(timeVector, voltageData, 'b', 'LineWidth', 1.5);
     % plot current
     % plot(timeVector, currentData, 'r', 'LineWidth', 1.5);
-    plot(timeVector, accumulatedCharge, 'r', 'LineWidth', 1.5);
+    % plot(timeVector, accumulatedCharge, 'r', 'LineWidth', 1.5);
     hold off;
 
     xlabel('Time (s)');
