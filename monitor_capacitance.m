@@ -238,3 +238,27 @@ function convertedCurrentData = voltageToCurrent(currentData)
     % Convert voltage value of current monitor to current
     convertedCurrentData = currentData / 1 * 200 * 1e-6; % Convert from V to A
 end
+
+function capacitance = calculateCapacitance(voltageData, currentData, timeVector)
+    % % Calculate accumulated charge
+    % accumulatedCharge = cumtrapz(timeVector, currentData);
+
+    % % Capacitance calculation
+    % capacitance = zeros(size(timeVector));
+    % valid_index = voltageData > 100; % Find valid indices
+    % capacitance(valid_index) = accumulatedCharge(valid_index) ./ voltageData(valid_index);
+
+    % Time step
+    dt = diff(timeVector);
+
+    % Voltage difference
+    dV = diff(voltageData);
+
+    % Charge difference (I * Δt)
+    dQ = currentData(1:end-1) .* dt;
+
+    % Capacitance calculation (ΔQ / ΔV)
+    capacitance = zeros(size(voltageData));
+    valid_idx = abs(dV) > 1e-3; % Exclude cases where voltage change is too small (threshold adjustable)
+    % capacitance([false; valid_idx]) = dQ(valid_idx) ./ dV(valid_idx);
+end
