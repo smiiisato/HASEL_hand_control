@@ -183,9 +183,9 @@ function plotData(saveData, csvFileName)
     end
     
     % Extract voltage and current data
-    voltageData = inputData(:, 2);
-    currentData = inputData(:, 3);
-    
+    voltageData = inputData(:, 2) * 1e3; % kV -> V
+    currentData = voltageToCurrent(currentData); % V -> A
+
     % Time vector
     timeVector = inputData(:, 1);
 
@@ -232,4 +232,9 @@ function saveCSV(voltageData, currentData, timeVector, capacitance, csvFileName)
 
     writetable(outputData, csvFileName);
     disp(['Data saved to ' csvFileName]);
+end
+
+function convertedCurrentData = voltageToCurrent(currentData)
+    % Convert voltage value of current monitor to current
+    convertedCurrentData = currentData / 1 * 200 * 1e-6; % Convert from V to A
 end
