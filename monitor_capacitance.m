@@ -24,6 +24,10 @@ cycleSamples = 2*lowHoldSamples + 2*rampSamples + highHoldSamples;
 totalSamples = initialSamples + numActuations*cycleSamples;
 outputSignal = zeros(totalSamples,1);
 
+% Initialize global variables
+global inputData;
+inputData = [];
+
 % 1. Set inital pause
 outputSignal(1:initialSamples) = zeros(initialSamples,1);
 
@@ -54,10 +58,6 @@ end
 
 % time vector for plotting
 t = (0:(totalSamples-1))' / sampleRate;
-
-% Shared variables
-sensorData = [];
-timeStamps = [];
 
 % Create UI
 fig = uifigure('Name', 'DAQ Voltage Ramp Control', 'Position', [100 100 700 500]);
@@ -107,10 +107,6 @@ function startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChanne
 
     % Set the 'ScansAvailableFcnCount' property
     dq.ScansAvailableFcnCount = floor(dq.Rate/10);
-
-    % Initialize global variables
-    global inputData;
-    inputData = [];
 
     % Zero out
     write(dq, [0]);
@@ -181,9 +177,12 @@ function plotData(saveData, csvFileName)
         uialert(fig, 'No data to plot yet.', 'Error');
         return;
     end
+
+    global outputSignal;
     
     % Extract voltage and current data
-    voltageData = inputData(:, 2) * 1e3; % kV -> V
+    % voltageData = inputData(:, 2) * 1e3; % kV -> V
+    voltageData = outputSignal * 1e3; % kV -> V
     currentData = voltageToCurrent(inputData(:, 3)); % V -> A
 
     % Time vector
@@ -193,7 +192,9 @@ function plotData(saveData, csvFileName)
     accumulatedCharge = cumtrapz(timeVector, currentData);
 
     % Capacitance calculation
-    capacitance = accumulatedCharge ./ voltageData;
+    capacitance = zeros(size(timeVector));
+    valid_index = voltageData > 0; % Find valid indices
+    capacitance(valid_index) = accumulatedCharge(valid_index) ./ voltageData(valid_index);
 
     % Plot capacitance
     figure;
