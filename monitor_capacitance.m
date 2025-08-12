@@ -6,7 +6,7 @@ aoChannel = 'ao0';
 sampleRate = 1000;
 rampTime = 1; % Ramp duration in seconds
 initialTime = 1;
-highHoldTime = 24;
+highHoldTime = 2;
 lowHoldTime = 2;
 maxVoltage = 5.5;
 numActuations = 1;
@@ -69,7 +69,7 @@ title(ax2, 'Capacitance');
 
 btnStart = uibutton(fig, 'push', 'Text', 'Start', ...
     'Position', [150 20 100 30], ...
-    'ButtonPushedFcn', @(btn,event) startDAQ(deviceID, aoChannel, sampleRate, outputSignal));
+    'ButtonPushedFcn', @(btn,event) startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel));
 
 btnSave = uibutton(fig, 'push', 'Text', 'Save CSV', ...
     'Position', [450 20 100 30], ...
@@ -87,7 +87,7 @@ xlim(ax1, [0,t(end)])
 
 %%%%%%%%%%%%%%%% Functions %%%%%%%%%%%%%%%%%%%%
 % Start DAQ function
-function startDAQ(deviceID, aoChannel, sampleRate, outputSignal)
+function startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel)
     dq = daq("ni");
     voltageOut = addoutput(dq, deviceID, aoChannel, 'Voltage');
 
@@ -96,7 +96,7 @@ function startDAQ(deviceID, aoChannel, sampleRate, outputSignal)
     voltageIn.TerminalConfig = "Differential";
     voltageIn.Name = "voltage_input";
 
-    currentIn = addinput(dq, "Dev1", aiCurrentChannel, "Current");
+    currentIn = addinput(dq, "Dev1", aiCurrentChannel, "Voltage");
     currentIn.TerminalConfig = "Differential";
     currentIn.Name = "current_input";
 
@@ -155,7 +155,7 @@ function startDAQ(deviceID, aoChannel, sampleRate, outputSignal)
     write(dq, [0]);
 
     csvFileName = 'DAQ_data.csv';
-    plotData(saveData = false, csvFileName);
+    plotData(saveData == false, csvFileName);
 end
 
 % Function to store data
