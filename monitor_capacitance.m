@@ -4,12 +4,15 @@ clc, clear, close all hidden;
 deviceID = 'Dev1';        % Change if needed (use daq.getDevices)
 aoChannel = 'ao0';
 sampleRate = 1000;
-rampTime = 1; % Ramp duration in seconds
-initialTime = 1;
-highHoldTime = 1;
+rampTime = 8; % Ramp duration in seconds
+initialTime = 2;
+highHoldTime = 3;
 lowHoldTime = 1;
-maxVoltage = 4.0;
+maxVoltage = 5.5;
 numActuations = 1;
+
+csvFileName = "hand_grasp_slow_.csv";
+% csvFileName = "a.csv";
 
 % Use configuration for capacitance monitoring
 aiVoltageChannel = 'ai4';
@@ -69,7 +72,7 @@ title(ax2, 'Capacitance');
 
 btnStart = uibutton(fig, 'push', 'Text', 'Start', ...
     'Position', [150 20 100 30], ...
-    'ButtonPushedFcn', @(btn,event) startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel));
+    'ButtonPushedFcn', @(btn,event) startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel, csvFileName));
 
 btnSave = uibutton(fig, 'push', 'Text', 'Save CSV', ...
     'Position', [450 20 100 30], ...
@@ -87,7 +90,7 @@ xlim(ax1, [0,t(end)])
 
 %%%%%%%%%%%%%%%% Functions %%%%%%%%%%%%%%%%%%%%
 % Start DAQ function
-function startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel)
+function startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel, csvFileName)
     dq = daq("ni");
     voltageOut = addoutput(dq, deviceID, aoChannel, 'Voltage');
 
@@ -150,7 +153,9 @@ function startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChanne
     % Zero out
     write(dq, [0]);
 
-    csvFileName = 'DAQ_data.csv';
+    % csvFileName = 'hand_grasp_no_0813_1.csv';
+    % csvFileName = 'hand_grasp_3.csv';
+    % csvFileName = 'hand_no_grasp_3.csv';
     plotData(outputSignal, true, csvFileName);
 end
 
@@ -238,33 +243,33 @@ function convertedCurrentData = voltageToCurrent(currentData)
 end
 
 function capacitance = calculateCapacitance(voltageData, currentData, timeVector)
-    % % Calculate accumulated charge
-    % accumulatedCharge = cumtrapz(timeVector, currentData);
-    % 
-    % % Capacitance calculation
-    % capacitance = zeros(size(timeVector));
-    % valid_index = voltageData > 200; % Find valid indices
-    % capacitance(valid_index) = accumulatedCharge(valid_index) ./ voltageData(valid_index);
+    % Calculate accumulated charge
+    accumulatedCharge = cumtrapz(timeVector, currentData);
+
+    % Capacitance calculation
+    capacitance = zeros(size(timeVector));
+    valid_index = voltageData > 0; % Find valid indices
+    capacitance(valid_index) = accumulatedCharge(valid_index) ./ voltageData(valid_index);
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Time step
-    dt = diff(timeVector);
-
-    % Voltage difference
-    dV = diff(voltageData);
-
-    % Charge difference (I * Δt)
-    dQ = currentData(1:end-1) .* dt;
-
-    % Charge
-    Q = cumtrapz(timeVector, currentData);
-
-    % Capacitance calculation (ΔQ / ΔV)
-    capacitance = zeros(size(voltageData));
-
-    voltage_ramp_idx = abs(dV) > 1e-3; % Exclude cases where voltage change is too small (threshold adjustable)
-    capacitance(voltage_ramp_idx) = dQ(voltage_ramp_idx) ./ dV(voltage_ramp_idx);
-
-    voltage_step_idx = (abs(dV) <= 1e-3) & (voltageData(1:end-1) > 1000);
-    capacitance(voltage_step_idx) = Q(voltage_step_idx) ./ voltageData(voltage_step_idx);
+    % % Time step
+    % dt = diff(timeVector);
+    % 
+    % % Voltage difference
+    % dV = diff(voltageData);
+    % 
+    % % Charge difference (I * Δt)
+    % dQ = currentData(1:end-1) .* dt;
+    % 
+    % % Charge
+    % Q = cumtrapz(timeVector, currentData);
+    % 
+    % % Capacitance calculation (ΔQ / ΔV)
+    % capacitance = zeros(size(voltageData));
+    % 
+    % voltage_ramp_idx = abs(dV) > 1e-3; % Exclude cases where voltage change is too small (threshold adjustable)
+    % capacitance(voltage_ramp_idx) = dQ(voltage_ramp_idx) ./ dV(voltage_ramp_idx);
+    % 
+    % voltage_step_idx = (abs(dV) <= 1e-3) & (voltageData(1:end-1) > 1000);
+    % capacitance(voltage_step_idx) = Q(voltage_step_idx) ./ voltageData(voltage_step_idx);
 end
