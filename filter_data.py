@@ -4,8 +4,8 @@ import numpy as np
 MA = False
 EMA = True
 
-CSVFILE = 'ExperimentData/hand_grasp_6kV.csv'
-CSVFILE2 = 'ExperimentData/hand_grasp_no_6kV.csv'
+CSVFILE = 'ExperimentData/hand_grasp_0814_3.csv'
+CSVFILE2 = 'ExperimentData/hand_grasp_no_0814_3.csv'
 #CSVFILE2 = None
 
 def moving_average(data, window_size):
@@ -59,16 +59,16 @@ def calculate_capacitance(voltage_data, current_data, time_vector):
     current_data = np.asarray(current_data)
     time_vector = np.asarray(time_vector)
 
-    """ # --- Calculate accumulated charge (integral of I over time) ---
+    # --- Calculate accumulated charge (integral of I over time) ---
     accumulated_charge = cumtrapz(current_data, time_vector)
 
     # --- Capacitance calculation Q / V ---
     capacitance = np.zeros_like(time_vector, dtype=float)
     valid_index = voltage_data > 200
-    capacitance[valid_index] = accumulated_charge[valid_index] / voltage_data[valid_index] """
+    capacitance[valid_index] = accumulated_charge[valid_index] / voltage_data[valid_index]
 
     # --- Alternative method (commented out, ΔQ / ΔV) ---
-    dt = np.diff(time_vector)
+    """ dt = np.diff(time_vector)
     dV = np.diff(voltage_data)
     dQ = current_data[:-1] * dt
     Q = cumtrapz(current_data, time_vector)
@@ -79,7 +79,7 @@ def calculate_capacitance(voltage_data, current_data, time_vector):
     capacitance[:-1][voltage_ramp_idx] = dQ[voltage_ramp_idx] / dV[voltage_ramp_idx]
 
     voltage_step_idx = (np.abs(dV) <= 1e-3) & (voltage_data[:-1] > 1000)
-    capacitance[:-1][voltage_step_idx] = Q[:-1][voltage_step_idx] / voltage_data[:-1][voltage_step_idx]
+    capacitance[:-1][voltage_step_idx] = Q[:-1][voltage_step_idx] / voltage_data[:-1][voltage_step_idx] """
 
     return capacitance
 
