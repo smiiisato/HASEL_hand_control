@@ -4,10 +4,10 @@ clc, clear, close all hidden;
 deviceID = 'Dev1';        % Change if needed (use daq.getDevices)
 aoChannel = 'ao0';
 sampleRate = 1000;
-rampTime = 8; % Ramp duration in seconds
+rampTime = 10; % Ramp duration in seconds
 initialTime = 2;
-highHoldTime = 3;
-lowHoldTime = 1;
+highHoldTime = 0;
+lowHoldTime = 0;
 maxVoltage = 5.5;
 numActuations = 1;
 
@@ -48,11 +48,14 @@ for i = 1:numActuations
     secStart = secEnd + 1;
     secEnd = secStart + highHoldSamples - 1;
     outputSignal(secStart:secEnd) = maxVoltage*ones(highHoldSamples,1);
-    % 4. Ramp down
+    % 4. Ramp down 
+    %{
     secStart = secEnd + 1;
-    secEnd = secStart + rampSamples - 1;
-    rampDown = linspace(maxVoltage, 0, rampSamples)';
-    outputSignal(secStart:secEnd) = rampDown;
+        secEnd = secStart + rampSamples - 1;
+        rampDown = linspace(maxVoltage, 0, rampSamples)';
+        outputSignal(secStart:secEnd) = rampDown; 
+    %}
+
     % 5. Low voltage pause
     secStart = secEnd + 1;
     secEnd = secStart + lowHoldSamples - 1;
@@ -73,10 +76,6 @@ title(ax2, 'Capacitance');
 btnStart = uibutton(fig, 'push', 'Text', 'Start', ...
     'Position', [150 20 100 30], ...
     'ButtonPushedFcn', @(btn,event) startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel, csvFileName));
-
-btnSave = uibutton(fig, 'push', 'Text', 'Save CSV', ...
-    'Position', [450 20 100 30], ...
-    'ButtonPushedFcn', @(btn,event) saveCSV());
 
 
 % Plot output signal preview
@@ -248,7 +247,7 @@ function capacitance = calculateCapacitance(voltageData, currentData, timeVector
 
     % Capacitance calculation
     capacitance = zeros(size(timeVector));
-    valid_index = voltageData > 0; % Find valid indices
+    valid_index = voltageData > 200; % Find valid indices
     capacitance(valid_index) = accumulatedCharge(valid_index) ./ voltageData(valid_index);
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%
