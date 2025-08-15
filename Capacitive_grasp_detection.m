@@ -19,13 +19,12 @@ aiVoltageChannel = 'ai4';
 aiCurrentChannel = 'ai0';
 
 % === Generate output signal ===
+global initialSamples rampSamples highHoldSamples lowHoldSamples cycleSamples totalSamples;
 initialSamples = initialTime * sampleRate;
 rampSamples = rampTime * sampleRate;
 highHoldSamples = highHoldTime * sampleRate;
 lowHoldSamples = lowHoldTime * sampleRate;
 cycleSamples = 2*lowHoldSamples + 2*rampSamples + highHoldSamples;
-
-global totalSamples;
 totalSamples = initialSamples + numActuations*cycleSamples;
 
 % Initialize global variables
@@ -175,9 +174,11 @@ function dq = setupDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageC
 
     figure;
     hPlot = plot(NaN, NaN, 'LineWidth', 1.5);
+    % add a horizontal line at baselineCap
+    yline(baselineCap, 'r--', 'LineWidth', 1.5);
     xlabel('Sample');
     ylabel('Capacitance (F)');
-    title('Grasp not detected');
+    title('Grasp not detected', 'Color',[0, 0 ,1], 'FontSize', 20);
     grid on;
 
 end
@@ -216,7 +217,8 @@ function real_time_plot_capacitance(inputData, newData, baselineCap, capThreshol
     % Calculate capacitance using the formula C = I / (dV/dt) at each time this function is called
     dt = mean(diff(newData(:,1))); % Sampling interval [s]
     dVdt = [diff(V)/dt];
-    C = I ./ dVdt;
+    %C = I ./ dVdt;
+    C = emaFilterCapacitance(capacitanceData, I ./ dVdt, 0.1);
     %C(~isfinite(C)) = NaN; % Remove infinities/NaNs
 
     % Append data for plotting
@@ -236,12 +238,13 @@ end
 
 function grasp_detected = grasp_detection(inputData, V, C)
     % Grasp detection logic
-    global capThreshold measuredAtMax baselineCap totalSamples;
+    global capThreshold measuredAtMax baselineCap initialSamples rampSamples;
 
     grasp_detected = false;
-    if ~isempty(V) && length(inputData) == totalSamples
-        Cmax = mean(C(V > max(V)*0.98));
-        diffCap = Cmax - baselineCap;
+    if ~isempty(V) && length(inputData) >= initialSamples + rampSamples
+        %Cmax = mean(C(V > max(V)*0.98));
+        Cmax = max(C(V > max(V)*0.98));
+        diffCap = baselineCap - Cmax;
         disp(['Cap change: ', num2str(diffCap*1e9), ' nF']);
         if diffCap > capThreshold
             grasp_detected = true;
@@ -250,6 +253,20 @@ function grasp_detected = grasp_detection(inputData, V, C)
             grasp_detected = false;
         end
         measuredAtMax = true;
+    end
+end
+
+function filteredNewCap = emaFilterCapacitance(capacitanceData, newCap, alpha)
+    % Exponential Moving Average filter
+    filteredNewCap = zeros(size(newCap));
+    if isempty(capacitanceData)
+        filteredNewCap(1) = alpha * newCap(1); % Initialize with the first value
+    else
+        filteredNewCap(1) = (1 - alpha) * capacitanceData(end) + alpha * newCap(1);
+    end
+
+    for i = 2:length(capacitanceData)
+        filteredNewCap(i) = (1 - alpha) * filteredNewCap(i-1) + alpha * newCap(i);
     end
 end
 
