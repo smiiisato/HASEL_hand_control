@@ -3,8 +3,8 @@ clc, clear, close all hidden;
 % User configuration
 deviceID = 'Dev1';        % Change if needed (use daq.getDevices)
 aoChannel = 'ao0';
-sampleRate = 1000;
-rampTime = 10; % Ramp duration in seconds
+sampleRate = 100000;
+rampTime = 1; % Ramp duration in seconds
 initialTime = 2;
 highHoldTime = 0;
 lowHoldTime = 0;
@@ -24,43 +24,58 @@ rampSamples = rampTime * sampleRate;
 highHoldSamples = highHoldTime * sampleRate;
 lowHoldSamples = lowHoldTime * sampleRate;
 cycleSamples = 2*lowHoldSamples + 2*rampSamples + highHoldSamples;
+
+global totalSamples;
 totalSamples = initialSamples + numActuations*cycleSamples;
-outputSignal = zeros(totalSamples,1);
 
 % Initialize global variables
 global inputData;
 inputData = [];
 
-% 1. Set inital pause
+global outputSignal;
+outputSignal = zeros(totalSamples,1);
 outputSignal(1:initialSamples) = zeros(initialSamples,1);
+
+global baselineCap;
+baselineCap = 8.61 * 1e-8;
+
+global capThreshold;
+capThreshold = 3.5 * 1e-9;
+
+global measuredAtMax;
+measuredAtMax = false;
 
 for i = 1:numActuations
     % 1. Initial low voltage
     secStart = initialSamples + (i-1)*cycleSamples;
     secEnd = secStart + lowHoldSamples - 1;
     outputSignal(secStart:secEnd) = zeros(lowHoldSamples,1);
+
     % 2. Ramp up
     secStart = secEnd + 1;
     secEnd = secStart + rampSamples - 1;
     rampUp = linspace(0, maxVoltage, rampSamples)';
     outputSignal(secStart:secEnd) = rampUp;
+    
     % 3. Hold high voltage
     secStart = secEnd + 1;
     secEnd = secStart + highHoldSamples - 1;
     outputSignal(secStart:secEnd) = maxVoltage*ones(highHoldSamples,1);
+
     % 4. Ramp down 
-    %{
     secStart = secEnd + 1;
-        secEnd = secStart + rampSamples - 1;
-        rampDown = linspace(maxVoltage, 0, rampSamples)';
-        outputSignal(secStart:secEnd) = rampDown; 
-    %}
+    secEnd = secStart + rampSamples - 1;
+    rampDown = linspace(maxVoltage, 0, rampSamples)';
+    outputSignal(secStart:secEnd) = rampDown; 
 
     % 5. Low voltage pause
     secStart = secEnd + 1;
     secEnd = secStart + lowHoldSamples - 1;
     outputSignal(secStart:secEnd) = zeros(lowHoldSamples,1);
 end
+
+% setup DAQ
+dq = setupDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel);
 
 % time vector for plotting
 t = (0:(totalSamples-1))' / sampleRate;
@@ -70,13 +85,9 @@ fig = uifigure('Name', 'DAQ Voltage Ramp Control', 'Position', [100 100 700 500]
 ax1 = uiaxes(fig, 'Position', [50 280 600 180]);
 title(ax1, 'Output Voltage');
 
-ax2 = uiaxes(fig, 'Position', [50 60 600 180]);
-title(ax2, 'Capacitance');
-
 btnStart = uibutton(fig, 'push', 'Text', 'Start', ...
     'Position', [150 20 100 30], ...
-    'ButtonPushedFcn', @(btn,event) startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel, csvFileName));
-
+    'ButtonPushedFcn', @(btn,event) startDAQ(dq, sampleRate, outputSignal, csvFileName));
 
 % Plot output signal preview
 plot(ax1, t, outputSignal, 'b','LineWidth',1.5);
@@ -89,29 +100,7 @@ xlim(ax1, [0,t(end)])
 
 %%%%%%%%%%%%%%%% Functions %%%%%%%%%%%%%%%%%%%%
 % Start DAQ function
-function startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel, csvFileName)
-    dq = daq("ni");
-    voltageOut = addoutput(dq, deviceID, aoChannel, 'Voltage');
-
-    % Add input channel for recording sensor data (modify as needed)
-    voltageIn = addinput(dq, "Dev1", aiVoltageChannel, "Voltage");
-    voltageIn.TerminalConfig = "Differential";
-    voltageIn.Name = "voltage_input";
-
-    currentIn = addinput(dq, "Dev1", aiCurrentChannel, "Voltage");
-    currentIn.TerminalConfig = "Differential";
-    currentIn.Name = "current_input";
-
-    dq.Rate = sampleRate;
-
-    % Set the ScansAvailableFcn to store data
-    dq.ScansAvailableFcn = @(src,evt) storeData(src, evt);
-
-    % Set the 'ScansAvailableFcnCount' property
-    dq.ScansAvailableFcnCount = floor(dq.Rate/10);
-
-    % Zero out
-    write(dq, [0]);
+function startDAQ(dq, sampleRate, outputSignal, csvFileName)
 
     outputSignal = double(outputSignal(:)); 
     outputSignal = [outputSignal];
@@ -152,13 +141,51 @@ function startDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChanne
     % Zero out
     write(dq, [0]);
 
-    plotData(outputSignal, true, csvFileName);
+    %plotData(outputSignal, true, csvFileName);
+end
+
+function dq = setupDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel)
+
+    dq = daq("ni");
+    voltageOut = addoutput(dq, "Dev1", aoChannel, 'Voltage');
+
+    % Add input channel for recording sensor data (modify as needed)
+    voltageIn = addinput(dq, "Dev1", aiVoltageChannel, "Voltage");
+    voltageIn.TerminalConfig = "Differential";
+    voltageIn.Name = "voltage_input";
+
+    currentIn = addinput(dq, "Dev1", aiCurrentChannel, "Voltage");
+    currentIn.TerminalConfig = "Differential";
+    currentIn.Name = "current_input";
+
+    dq.Rate = sampleRate;
+
+    % Set the 'ScansAvailableFcnCount' property
+    dq.ScansAvailableFcnCount = floor(dq.Rate/10);
+
+    % Zero out
+    write(dq, [0]);
+
+    dq.ScansAvailableFcn = @(src, evt) storeData(src, evt);
+
+    % Create a new figure for the capacitance real-time plot
+    global hPlot capacitanceData timeData;
+    capacitanceData = [];
+    timeData = [];
+
+    figure;
+    hPlot = plot(NaN, NaN, 'LineWidth', 1.5);
+    xlabel('Sample');
+    ylabel('Capacitance (F)');
+    title('Grasp not detected');
+    grid on;
+
 end
 
 % Function to store data
 function storeData(src, event)
     % global variables
-    global inputData baselineCap capThreshold measuredAtMax app
+    global inputData baselineCap capThreshold measuredAtMax outputSignal;
 
     % get data from DAQ
     [eventData, eventTimestamps] = read(src, src.ScansAvailableFcnCount, "OutputFormat", "Matrix");
@@ -171,47 +198,65 @@ function storeData(src, event)
     inputData = [inputData; newData];
     fprintf('Stored %d new data points. Total: %d\n', size(newData, 1), size(inputData, 1));
 
+    % Real-time plot of Capacitance
+    real_time_plot_capacitance(inputData, newData, baselineCap, capThreshold, measuredAtMax);
+end
+
+function real_time_plot_capacitance(inputData, newData, baselineCap, capThreshold, measuredAtMax)
+    % Real-time plot of Capacitance
+    % This function plots the capacitance values in real-time
+    % Add only new points to the plot when new data is available
+    global hPlot capacitanceData timeData outputSignal;
+
     % === Set indices for voltage and current columns ===
-    V = outputSignal(length(inputData)-length(newData)+1:length(inputData), 1); % Voltage data
+    V = outputSignal(length(inputData)-length(newData):length(inputData), 1); % Voltage data
     I = newData(:,3);
 
     % === Capacitance estimation ===
     % Calculate capacitance using the formula C = I / (dV/dt) at each time this function is called
     dt = mean(diff(newData(:,1))); % Sampling interval [s]
-    dVdt = [0; diff(V)/dt];
+    dVdt = [diff(V)/dt];
     C = I ./ dVdt;
     %C(~isfinite(C)) = NaN; % Remove infinities/NaNs
 
-    % === Grasp detection near maximum voltage ===
-    if ~isempty(V) && ~measuredAtMax && any(V > max(V)*0.98)
-        Cmax = nanmean(C(V > max(V)*0.98));
+    % Append data for plotting
+    startIndex = length(capacitanceData) + 1;
+    endIndex = startIndex + length(C) - 1;
+    timeData = [timeData; newData(:,1)];
+    capacitanceData = [capacitanceData; C];
+
+    % Update plot
+    set(hPlot, 'XData', timeData, 'YData', capacitanceData);
+    if grasp_detection(inputData, V, C)
+        title('Grasp detected', 'Color',[1, 0 ,0], 'FontSize', 20);
+    else
+        title('Grasp not detected', 'Color',[0, 0 ,1], 'FontSize', 20);
+    end
+end
+
+function grasp_detected = grasp_detection(inputData, V, C)
+    % Grasp detection logic
+    global capThreshold measuredAtMax baselineCap totalSamples;
+
+    grasp_detected = false;
+    if ~isempty(V) && length(inputData) == totalSamples
+        Cmax = mean(C(V > max(V)*0.98));
         diffCap = Cmax - baselineCap;
         disp(['Cap change: ', num2str(diffCap*1e9), ' nF']);
         if diffCap > capThreshold
-            disp('*** Grasp detected! ***');
-            app.GripStatusLabel.Text = 'Grasp detected';
-            app.GripStatusLabel.FontColor = [0 0.6 0]; % Green
+            grasp_detected = true;
         else
             disp('No grasp.');
-            app.GripStatusLabel.Text = 'No grasp';
-            app.GripStatusLabel.FontColor = [0.8 0 0]; % Red
+            grasp_detected = false;
         end
         measuredAtMax = true;
-    end
-
-    % === UI real-time update ===
-    if isvalid(app.UIAxes)
-        plot(app.UIAxes, newData(:,1), C, 'b');
-        xlabel(app.UIAxes, 'Time [s]');
-        ylabel(app.UIAxes, 'Capacitance [nF]');
-        title(app.UIAxes, 'Estimated Capacitance');
     end
 end
 
 function plotData(outputSignal, saveData, csvFileName)
     global inputData;
     if isempty(inputData)
-        uialert(fig, 'No data to plot yet.', 'Error');
+        disp('No data to plot yet.');
         return;
     end
     
@@ -222,21 +267,12 @@ function plotData(outputSignal, saveData, csvFileName)
     % Time vector
     timeVector = inputData(:, 1);
 
-    % Accumulated charge
-    accumulatedCharge = cumtrapz(timeVector, currentData);
-
     % Capacitance calculation
     capacitance = calculateCapacitance(voltageData, currentData, timeVector);
 
     % Plot capacitance
     figure;
     plot(timeVector, capacitance, 'g', 'LineWidth', 1.5);
-    % % plot voltage
-    % hold on;
-    % plot(timeVector, voltageData, 'b', 'LineWidth', 1.5);
-    % plot current
-    % plot(timeVector, currentData, 'r', 'LineWidth', 1.5);
-    % plot(timeVector, accumulatedCharge, 'r', 'LineWidth', 1.5);
     hold off;
 
     xlabel('Time (s)');
@@ -256,7 +292,7 @@ end
 function saveCSV(voltageData, currentData, timeVector, capacitance, csvFileName)
     global inputData;
     if isempty(inputData)
-        uialert(fig, 'No data to save yet.', 'Error');
+        disp('No data to save yet.');
         return;
     end
    
@@ -274,33 +310,24 @@ function convertedCurrentData = voltageToCurrent(currentData)
 end
 
 function capacitance = calculateCapacitance(voltageData, currentData, timeVector)
-    % Calculate accumulated charge
-    accumulatedCharge = cumtrapz(timeVector, currentData);
+    % Time step
+    dt = diff(timeVector);
 
-    % Capacitance calculation
-    capacitance = zeros(size(timeVector));
-    valid_index = voltageData > 200; % Find valid indices
-    capacitance(valid_index) = accumulatedCharge(valid_index) ./ voltageData(valid_index);
+    % Voltage difference
+    dV = diff(voltageData);
 
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % % Time step
-    % dt = diff(timeVector);
-    % 
-    % % Voltage difference
-    % dV = diff(voltageData);
-    % 
-    % % Charge difference (I * Δt)
-    % dQ = currentData(1:end-1) .* dt;
-    % 
-    % % Charge
-    % Q = cumtrapz(timeVector, currentData);
-    % 
-    % % Capacitance calculation (ΔQ / ΔV)
-    % capacitance = zeros(size(voltageData));
-    % 
-    % voltage_ramp_idx = abs(dV) > 1e-3; % Exclude cases where voltage change is too small (threshold adjustable)
-    % capacitance(voltage_ramp_idx) = dQ(voltage_ramp_idx) ./ dV(voltage_ramp_idx);
-    % 
-    % voltage_step_idx = (abs(dV) <= 1e-3) & (voltageData(1:end-1) > 1000);
-    % capacitance(voltage_step_idx) = Q(voltage_step_idx) ./ voltageData(voltage_step_idx);
+    % Charge difference (I * Δt)
+    dQ = currentData(1:end-1) .* dt;
+
+    % Charge
+    Q = cumtrapz(timeVector, currentData);
+
+    % Capacitance calculation (ΔQ / ΔV)
+    capacitance = zeros(size(voltageData));
+
+    voltage_ramp_idx = abs(dV) > 1e-3; % Exclude cases where voltage change is too small (threshold adjustable)
+    capacitance(voltage_ramp_idx) = dQ(voltage_ramp_idx) ./ dV(voltage_ramp_idx);
+
+    voltage_step_idx = (abs(dV) <= 1e-3) & (voltageData(1:end-1) > 1000);
+    capacitance(voltage_step_idx) = Q(voltage_step_idx) ./ voltageData(voltage_step_idx);
 end

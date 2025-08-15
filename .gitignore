@@ -1,1 +1,5 @@
 *.asv
+.venv
+__pycache__/
+*.pyc
+ExperimentData/
