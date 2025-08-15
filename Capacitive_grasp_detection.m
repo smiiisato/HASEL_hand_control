@@ -1,6 +1,7 @@
 clc, clear, close all hidden;
 
 % User configuration
+global deviceID aoChannel sampleRate rampTime initialTime highHoldTime lowHoldTime maxVoltage numActuations csvFileName;
 deviceID = 'Dev1';        % Change if needed (use daq.getDevices)
 aoChannel = 'ao0';
 sampleRate = 100000;
@@ -13,6 +14,9 @@ numActuations = 1;
 
 csvFileName = "hand_grasp_slow_.csv";
 % csvFileName = "a.csv";
+
+global FONTSIZE;
+FONTSIZE = 50;
 
 % Use configuration for capacitance monitoring
 aiVoltageChannel = 'ai4';
@@ -27,82 +31,117 @@ lowHoldSamples = lowHoldTime * sampleRate;
 cycleSamples = 2*lowHoldSamples + 2*rampSamples + highHoldSamples;
 totalSamples = initialSamples + numActuations*cycleSamples;
 
-% Initialize global variables
-global inputData;
-inputData = [];
 
-global outputSignal;
-outputSignal = zeros(totalSamples,1);
-outputSignal(1:initialSamples) = zeros(initialSamples,1);
-
-global baselineCap;
-baselineCap = 8.61 * 1e-8;
-
-global capThreshold;
-capThreshold = 3.5 * 1e-9;
-
-global measuredAtMax;
-measuredAtMax = false;
-
-for i = 1:numActuations
-    % 1. Initial low voltage
-    secStart = initialSamples + (i-1)*cycleSamples;
-    secEnd = secStart + lowHoldSamples - 1;
-    outputSignal(secStart:secEnd) = zeros(lowHoldSamples,1);
-
-    % 2. Ramp up
-    secStart = secEnd + 1;
-    secEnd = secStart + rampSamples - 1;
-    rampUp = linspace(0, maxVoltage, rampSamples)';
-    outputSignal(secStart:secEnd) = rampUp;
-    
-    % 3. Hold high voltage
-    secStart = secEnd + 1;
-    secEnd = secStart + highHoldSamples - 1;
-    outputSignal(secStart:secEnd) = maxVoltage*ones(highHoldSamples,1);
-
-    % 4. Ramp down 
-    secStart = secEnd + 1;
-    secEnd = secStart + rampSamples - 1;
-    rampDown = linspace(maxVoltage, 0, rampSamples)';
-    outputSignal(secStart:secEnd) = rampDown; 
-
-    % 5. Low voltage pause
-    secStart = secEnd + 1;
-    secEnd = secStart + lowHoldSamples - 1;
-    outputSignal(secStart:secEnd) = zeros(lowHoldSamples,1);
-end
+% Generate output signal
+outputSignal = generateOutputSignal();
 
 % setup DAQ
-dq = setupDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel);
+% dq = setupDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel);
 
 % time vector for plotting
 t = (0:(totalSamples-1))' / sampleRate;
 
 % Create UI
 fig = uifigure('Name', 'DAQ Voltage Ramp Control', 'Position', [100 100 700 500]);
+global ax1;
 ax1 = uiaxes(fig, 'Position', [50 280 600 180]);
-title(ax1, 'Output Voltage');
+ax1.FontSize = 20;
+title(ax1, 'Output Voltage', 'FontSize', FONTSIZE);
+
+% Plot output signal preview
+plot(ax1, t, outputSignal, 'b', 'LineWidth', 3);
+xlabel(ax1, 'Time (s)', 'FontSize', FONTSIZE-20);
+ylabel(ax1, 'Voltage (kV)', 'FontSize', FONTSIZE-20);
+range = maxVoltage-min(outputSignal);
+ylim(ax1, [min(outputSignal)-0.1*range, maxVoltage+0.1*range]);
+xlim(ax1, [0,t(end)]);
+
+dq = setupDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageChannel, aiCurrentChannel);
 
 btnStart = uibutton(fig, 'push', 'Text', 'Start', ...
     'Position', [150 20 100 30], ...
     'ButtonPushedFcn', @(btn,event) startDAQ(dq, sampleRate, outputSignal, csvFileName));
 
-% Plot output signal preview
-plot(ax1, t, outputSignal, 'b','LineWidth',1.5);
-ax1.XLabel.String = 'Time (s)';
-ax1.YLabel.String = 'Voltage (V)';
-range = maxVoltage-min(outputSignal);
-ylim(ax1, [min(outputSignal)-0.1*range, maxVoltage+0.1*range]);
-xlim(ax1, [0,t(end)])
-
 
 %%%%%%%%%%%%%%%% Functions %%%%%%%%%%%%%%%%%%%%
+function outputSignal = generateOutputSignal()
+    % Initialize global variables
+    global initialSamples rampSamples highHoldSamples lowHoldSamples cycleSamples totalSamples maxVoltage numActuations;
+    global inputData;
+    inputData = [];
+
+    global outputSignal;
+    outputSignal = zeros(totalSamples,1);
+    outputSignal(1:initialSamples) = zeros(initialSamples,1);
+
+    global baselineCap;
+    baselineCap = 8.61 * 1e-8;
+
+    global capThreshold;
+    capThreshold = 3.5 * 1e-9;
+
+    global measuredAtMax;
+    measuredAtMax = false;
+
+    for i = 1:numActuations
+        % 1. Initial low voltage
+        secStart = initialSamples + (i-1)*cycleSamples;
+        secEnd = secStart + lowHoldSamples - 1;
+        outputSignal(secStart:secEnd) = zeros(lowHoldSamples,1);
+        
+        % 2. Ramp up
+        secStart = secEnd + 1;
+        secEnd = secStart + rampSamples - 1;
+        rampUp = linspace(0, maxVoltage, rampSamples)';
+        outputSignal(secStart:secEnd) = rampUp;
+        
+        % 3. Hold high voltage
+        secStart = secEnd + 1;
+        secEnd = secStart + highHoldSamples - 1;
+        outputSignal(secStart:secEnd) = maxVoltage*ones(highHoldSamples,1);
+        
+        % 4. Ramp down 
+        secStart = secEnd + 1;
+        secEnd = secStart + rampSamples - 1;
+        rampDown = linspace(maxVoltage, 0, rampSamples)';
+        outputSignal(secStart:secEnd) = rampDown; 
+
+        % 5. Low voltage pause
+        secStart = secEnd + 1;
+        secEnd = secStart + lowHoldSamples - 1;
+        outputSignal(secStart:secEnd) = zeros(lowHoldSamples,1);
+    end
+end
+
 % Start DAQ function
 function startDAQ(dq, sampleRate, outputSignal, csvFileName)
+    global baselineCap ax1;
+    cla(ax1);
+    global FONTSIZE;
+    title(ax1, 'Detecting Grasp...', 'FontSize', FONTSIZE, 'Color', [0, 0, 0]);
+    xlabel(ax1, 'Time (s)', 'FontSize', FONTSIZE-20);
+    ylabel(ax1, 'Capacitance (F)', 'FontSize', FONTSIZE-20);
+
+    yline(ax1, baselineCap, 'r--', 'LineWidth', 3, 'DisplayName', 'Baseline Capacitance');
+    ylim(ax1, [0, baselineCap*1.2]);
+    global rampTime initialTime;
+    xlim(ax1, [0, (rampTime+initialTime)]);
+    grid(ax1, 'on');
+
+    % set(hPlot, 'Visible','on');
+    global hPlot;
+    hold(ax1, 'on');
+    hPlot = plot(ax1, NaN, NaN, 'LineWidth', 3, 'DisplayName', 'Capacitance', 'Visible', 'off');
+    set(hPlot, 'XData', NaN, 'YData', NaN, 'Visible', 'on');
+    legend(ax1, 'show', 'Location', 'southwest', 'FontSize', FONTSIZE-10);
 
     outputSignal = double(outputSignal(:)); 
     outputSignal = [outputSignal];
+
+    % Initialize global variables for data storage
+    global capacitanceData timeData;
+    capacitanceData = [];
+    timeData = [];
 
     % Queue output signal
     preload(dq, outputSignal);
@@ -140,6 +179,12 @@ function startDAQ(dq, sampleRate, outputSignal, csvFileName)
     % Zero out
     write(dq, [0]);
 
+    % Initialize global variables for capacitance data
+    global inputData;
+    inputData = [];
+    global measuredAtMax;
+    measuredAtMax = false;
+
     %plotData(outputSignal, true, csvFileName);
 end
 
@@ -167,24 +212,6 @@ function dq = setupDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageC
 
     dq.ScansAvailableFcn = @(src, evt) storeData(src, evt);
 
-    % Create a new figure for the capacitance real-time plot
-    global hPlot capacitanceData timeData baselineCap;
-    capacitanceData = [];
-    timeData = [];
-
-    figure;
-    hPlot = plot(NaN, NaN, 'LineWidth', 1.5,'DisplayName', 'Capacitance');
-    hold on;
-    % add a horizontal line at baselineCap
-    yline(baselineCap, 'r--', 'LineWidth', 1.5, 'DisplayName', 'Baseline Capacitance');
-    xlabel('Time (s)');
-    ylabel('Capacitance (F)');
-    % set the y-axis limits
-    ylim([0, baselineCap*1.2]);
-    title('Detecting Grasp...', 'FontSize', 20);
-    legend('show');
-    grid on;
-
 end
 
 % Function to store data
@@ -211,7 +238,7 @@ function real_time_plot_capacitance(newData)
     % Real-time plot of Capacitance
     % This function plots the capacitance values in real-time
     % Add only new points to the plot when new data is available
-    global inputData hPlot capacitanceData timeData outputSignal measuredAtMax;
+    global inputData capacitanceData timeData outputSignal measuredAtMax;
 
     % if measuredAtMax is true, skip the call
     if measuredAtMax
@@ -249,12 +276,13 @@ function real_time_plot_capacitance(newData)
     capacitanceData = [capacitanceData; C];
 
     % Update plot
+    global hPlot ax1 FONTSIZE;
     set(hPlot, 'XData', timeData, 'YData', capacitanceData);
     if ~measuredAtMax && grasp_detection(capacitanceData)
-        title('Grasp detected', 'Color',[1, 0 ,0], 'FontSize', 20);
+        title(ax1, 'Grasp detected', 'Color',[1, 0 ,0], 'FontSize', FONTSIZE);
     elseif measuredAtMax
         % If grasp is not detected, update the title
-        title('Grasp not detected', 'Color',[0, 0 ,1], 'FontSize', 20);
+        title(ax1, 'Grasp not detected', 'Color',[0, 0 ,1], 'FontSize', FONTSIZE);
     end
 end
 
