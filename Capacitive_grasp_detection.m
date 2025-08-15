@@ -168,17 +168,21 @@ function dq = setupDAQ(deviceID, aoChannel, sampleRate, outputSignal, aiVoltageC
     dq.ScansAvailableFcn = @(src, evt) storeData(src, evt);
 
     % Create a new figure for the capacitance real-time plot
-    global hPlot capacitanceData timeData;
+    global hPlot capacitanceData timeData baselineCap;
     capacitanceData = [];
     timeData = [];
 
     figure;
-    hPlot = plot(NaN, NaN, 'LineWidth', 1.5);
+    hPlot = plot(NaN, NaN, 'LineWidth', 1.5,'DisplayName', 'Capacitance');
+    hold on;
     % add a horizontal line at baselineCap
-    yline(baselineCap, 'r--', 'LineWidth', 1.5);
-    xlabel('Sample');
+    yline(baselineCap, 'r--', 'LineWidth', 1.5, 'DisplayName', 'Baseline Capacitance');
+    xlabel('Time (s)');
     ylabel('Capacitance (F)');
-    title('Grasp not detected', 'Color',[0, 0 ,1], 'FontSize', 20);
+    % set the y-axis limits
+    ylim([0, baselineCap*1.2]);
+    title('Detecting Grasp...', 'FontSize', 20);
+    legend('show');
     grid on;
 
 end
@@ -186,7 +190,7 @@ end
 % Function to store data
 function storeData(src, event)
     % global variables
-    global inputData baselineCap capThreshold measuredAtMax outputSignal;
+    global inputData;
 
     % get data from DAQ
     [eventData, eventTimestamps] = read(src, src.ScansAvailableFcnCount, "OutputFormat", "Matrix");
@@ -197,60 +201,79 @@ function storeData(src, event)
     % Add new data
     newData = [eventTimestamps, eventData];
     inputData = [inputData; newData];
-    fprintf('Stored %d new data points. Total: %d\n', size(newData, 1), size(inputData, 1));
+    % fprintf('Stored %d new data points. Total: %d\n', size(newData, 1), size(inputData, 1));
 
     % Real-time plot of Capacitance
-    real_time_plot_capacitance(inputData, newData, baselineCap, capThreshold, measuredAtMax);
+    real_time_plot_capacitance(newData);
 end
 
-function real_time_plot_capacitance(inputData, newData, baselineCap, capThreshold, measuredAtMax)
+function real_time_plot_capacitance(newData)
     % Real-time plot of Capacitance
     % This function plots the capacitance values in real-time
     % Add only new points to the plot when new data is available
-    global hPlot capacitanceData timeData outputSignal;
+    global inputData hPlot capacitanceData timeData outputSignal measuredAtMax;
+
+    % if measuredAtMax is true, skip the call
+    if measuredAtMax
+        return;
+    end
 
     % === Set indices for voltage and current columns ===
-    V = outputSignal(length(inputData)-length(newData):length(inputData), 1); % Voltage data
-    I = newData(:,3);
+    if isempty(capacitanceData)
+        % If capacitanceData is empty, thi is is the first call
+        V = [0; outputSignal(length(inputData)-length(newData)+1:length(inputData), 1) * 1e3]; % Convert kV to V
+    else
+        V = outputSignal(length(inputData)-length(newData):length(inputData), 1) * 1e3; % Convert kV to V
+    end
+    I = voltageToCurrent(newData(:, 3)); % Convert voltage to current
 
     % === Capacitance estimation ===
     % Calculate capacitance using the formula C = I / (dV/dt) at each time this function is called
-    dt = mean(diff(newData(:,1))); % Sampling interval [s]
-    dVdt = [diff(V)/dt];
-    %C = I ./ dVdt;
-    C = emaFilterCapacitance(capacitanceData, I ./ dVdt, 0.1);
-    %C(~isfinite(C)) = NaN; % Remove infinities/NaNs
+    % if min(V) > 0 -> calculate capacitance
+    if min(V) > 0
+        % Calculate capacitance using the formula C = I / (dV/dt)
+        % dV/dt is the derivative of voltage with respect to time
+        dt = mean(diff(newData(:,1))); % Sampling interval [s]
+        dVdt = [diff(V)/dt];
+        C = I ./ dVdt;
+        % Remove infinities and NaNs
+        C(~isfinite(C)) = 0; % Remove infinities/NaNs
+        % Apply EMA filter to the capacitance data
+        C = emaFilterCapacitance(capacitanceData, C, 0.0001);
+    else
+        C = zeros(size(newData(:,1))); % If voltage is zero, set capacitance to zero
+    end
 
     % Append data for plotting
-    startIndex = length(capacitanceData) + 1;
-    endIndex = startIndex + length(C) - 1;
     timeData = [timeData; newData(:,1)];
     capacitanceData = [capacitanceData; C];
 
     % Update plot
     set(hPlot, 'XData', timeData, 'YData', capacitanceData);
-    if grasp_detection(inputData, V, C)
+    if ~measuredAtMax && grasp_detection(capacitanceData)
         title('Grasp detected', 'Color',[1, 0 ,0], 'FontSize', 20);
-    else
+    elseif measuredAtMax
+        % If grasp is not detected, update the title
         title('Grasp not detected', 'Color',[0, 0 ,1], 'FontSize', 20);
     end
 end
 
-function grasp_detected = grasp_detection(inputData, V, C)
+function grasp_detected = grasp_detection(capacitanceData)
     % Grasp detection logic
     global capThreshold measuredAtMax baselineCap initialSamples rampSamples;
 
     grasp_detected = false;
-    if ~isempty(V) && length(inputData) >= initialSamples + rampSamples
+    if length(capacitanceData) >= initialSamples + rampSamples
         %Cmax = mean(C(V > max(V)*0.98));
-        Cmax = max(C(V > max(V)*0.98));
+        Cmax = max(capacitanceData);
         diffCap = baselineCap - Cmax;
         disp(['Cap change: ', num2str(diffCap*1e9), ' nF']);
         if diffCap > capThreshold
             grasp_detected = true;
+            disp('Grasp detected!')
         else
-            disp('No grasp.');
             grasp_detected = false;
+            disp('Grasp not detected!')
         end
         measuredAtMax = true;
     end
@@ -265,7 +288,7 @@ function filteredNewCap = emaFilterCapacitance(capacitanceData, newCap, alpha)
         filteredNewCap(1) = (1 - alpha) * capacitanceData(end) + alpha * newCap(1);
     end
 
-    for i = 2:length(capacitanceData)
+    for i = 2:length(newCap)
         filteredNewCap(i) = (1 - alpha) * filteredNewCap(i-1) + alpha * newCap(i);
     end
 end
